@@ -189,20 +189,20 @@ export default function App() {
               </div>
             </section>
 
-            <section className="order-1 md:order-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+            <section className="order-1 md:order-2 pb-2 md:pb-0">
               <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block mb-3 md:mb-4">Categorías</span>
-              <ul className="flex md:flex-col gap-2 md:gap-1 text-[10px] md:text-xs font-bold md:font-normal uppercase md:capitalize">
+              <ul className="grid grid-cols-2 md:flex md:flex-col gap-2 md:gap-1 text-[10px] md:text-xs font-bold md:font-normal uppercase md:capitalize">
                 {categories.map((cat, idx) => (
-                  <li key={cat.id} className="shrink-0 md:shrink">
+                  <li key={cat.id}>
                     <button
                       onClick={() => setSelectedCategoryId(cat.id)}
-                      className={`flex justify-between items-center py-1.5 md:py-2 px-3 md:px-0 border md:border-0 rounded-full md:rounded-none md:border-b transition-all whitespace-nowrap ${
+                      className={`w-full flex justify-between items-center py-1.5 md:py-2 px-3 md:px-0 border md:border-0 rounded-full md:rounded-none md:border-b transition-all ${
                         selectedCategoryId === cat.id 
                         ? 'bg-ink text-paper border-ink md:bg-transparent md:text-ink md:border-ink md:font-bold' 
                         : 'border-ink/10 md:border-transparent hover:border-ink/30 text-ink/60 hover:text-ink'
                       }`}
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 truncate">
                         <span className="hidden md:inline opacity-30 font-mono text-[9px]">{String(idx).padStart(2, '0')}.</span> {cat.name}
                       </span>
                       <span className="hidden md:inline opacity-40 font-normal ml-2">
