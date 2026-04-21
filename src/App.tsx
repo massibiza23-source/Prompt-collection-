@@ -17,7 +17,10 @@ import {
   Check,
   Variable,
   Wand2,
-  Loader2
+  Loader2,
+  Settings,
+  PlusCircle,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Category, Prompt } from './types';
@@ -59,14 +62,32 @@ export default function App() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         variables: ['secreto', 'tono']
+      },
+      {
+        id: '3',
+        title: 'Clonador de Apps AI Studio',
+        content: 'Actúa como un arquitecto de software experto en Google AI Studio. Analiza el código fuente de esta aplicación: {{codigo_app}}. Tu tarea es generar un plan detallado para replicar esta funcionalidad en un nuevo proyecto. Incluye: 1. Dependencias necesarias en package.json. 2. Permisos requeridos en metadata.json. 3. Estructura de archivos recomendada. 4. Explicación de las variables de entorno {{env_vars}}.',
+        categoryId: 'coding',
+        tags: ['AI Studio', 'Arquitectura', 'Clonación'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        variables: ['codigo_app', 'env_vars']
       }
     ];
   });
   
-  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const saved = localStorage.getItem('prompt_vault_categories');
+    if (saved) return JSON.parse(saved);
+    return DEFAULT_CATEGORIES;
+  });
+  
   const [selectedCategoryId, setSelectedCategoryId] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [isManagingCategories, setIsManagingCategories] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState<Partial<Prompt> | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -74,6 +95,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('prompt_vault_data', JSON.stringify(prompts));
   }, [prompts]);
+
+  useEffect(() => {
+    localStorage.setItem('prompt_vault_categories', JSON.stringify(categories));
+  }, [categories]);
 
   const filteredPrompts = useMemo(() => {
     return prompts.filter(p => {
@@ -151,6 +176,41 @@ export default function App() {
     }
   };
 
+  const handleCreateCategory = () => {
+    const newCategory: Category = {
+      id: crypto.randomUUID(),
+      name: 'Nueva Categoría',
+      icon: 'Compass',
+      color: 'text-zinc-600'
+    };
+    setCategories(prev => [...prev, newCategory]);
+    setEditingCategoryId(newCategory.id);
+    setEditingCategoryName(newCategory.name);
+  };
+
+  const handleStartEditCategory = (cat: Category) => {
+    setEditingCategoryId(cat.id);
+    setEditingCategoryName(cat.name);
+  };
+
+  const handleSaveCategoryName = (id: string) => {
+    if (!editingCategoryName.trim()) return;
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name: editingCategoryName.trim() } : c));
+    setEditingCategoryId(null);
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    if (id === 'all' || id === 'misc') {
+      alert('Esta categoría no se puede eliminar.');
+      return;
+    }
+    if (window.confirm('¿Estás seguro? Los prompts en esta categoría se moverán a "Varios".')) {
+      setCategories(prev => prev.filter(c => c.id !== id));
+      setPrompts(prev => prev.map(p => p.categoryId === id ? { ...p, categoryId: 'misc' } : p));
+      if (selectedCategoryId === id) setSelectedCategoryId('all');
+    }
+  };
+
   const getIcon = (iconName: string) => {
     const icons: Record<string, any> = { Layout, Code, Edit3, MessageSquare, Lightbulb, Compass };
     const IconComponent = icons[iconName] || Layout;
@@ -190,7 +250,17 @@ export default function App() {
             </section>
 
             <section className="order-1 md:order-2 pb-2 md:pb-0">
-              <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block mb-3 md:mb-4">Categorías</span>
+              <div className="flex justify-between items-baseline mb-3 md:mb-4">
+                <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block">Categorías</span>
+                <button 
+                  onClick={() => setIsManagingCategories(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 md:p-1 hover:bg-ink hover:text-paper border border-ink/20 md:border-transparent hover:border-ink transition-all rounded text-[9px] font-bold uppercase"
+                  title="Gestionar Categorías"
+                >
+                  <Settings size={14} />
+                  <span className="md:hidden">Editar</span>
+                </button>
+              </div>
               <ul className="grid grid-cols-2 md:flex md:flex-col gap-2 md:gap-1 text-[10px] md:text-xs font-bold md:font-normal uppercase md:capitalize">
                 {categories.map((cat, idx) => (
                   <li key={cat.id}>
@@ -510,6 +580,105 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Category Management Modal */}
+      <AnimatePresence>
+        {isManagingCategories && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsManagingCategories(false)}
+              className="absolute inset-0 bg-ink/70 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-paper border border-ink shadow-[20px_20px_0px_0px_rgba(26,26,26,0.1)] overflow-hidden"
+            >
+              <div className="px-8 py-6 border-b border-ink flex items-center justify-between bg-white">
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-bold uppercase letter-spacing-wide opacity-40">System Config</span>
+                  <h2 className="font-serif text-2xl italic tracking-tight">Categorías</h2>
+                </div>
+                <button 
+                  onClick={() => setIsManagingCategories(false)}
+                  className="p-2 border border-ink hover:bg-ink hover:text-paper transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {categories.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between p-3 border border-ink/10 bg-white group min-h-[56px]">
+                    {editingCategoryId === cat.id ? (
+                      <div className="flex-1 flex gap-2 mr-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSaveCategoryName(cat.id)}
+                          className="flex-1 px-2 py-1 bg-paper border border-ink text-[10px] font-bold uppercase focus:outline-none"
+                        />
+                        <button 
+                          onClick={() => handleSaveCategoryName(cat.id)}
+                          className="p-1 px-2 bg-ink text-paper text-[8px] font-bold uppercase"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="font-bold text-xs uppercase letter-spacing-wide truncate mr-2">{cat.name}</span>
+                    )}
+                    
+                    <div className="flex gap-2 shrink-0">
+                      {cat.id !== 'all' && cat.id !== 'misc' && (
+                        <>
+                          {editingCategoryId !== cat.id && (
+                            <button 
+                              onClick={() => handleStartEditCategory(cat)}
+                              className="p-1.5 border border-ink/20 hover:border-ink hover:bg-paper transition-all"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDeleteCategory(cat.id)}
+                            className="p-1.5 border border-ink/20 hover:border-red-500 hover:text-red-500 transition-all"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                
+                <button 
+                  onClick={handleCreateCategory}
+                  className="w-full py-4 border border-dashed border-ink/30 text-[10px] font-bold uppercase letter-spacing-wide hover:border-ink hover:bg-white transition-all flex items-center justify-center gap-2"
+                >
+                  <PlusCircle size={14} />
+                  Añadir Categoría
+                </button>
+              </div>
+
+              <div className="px-8 py-4 border-t border-ink bg-gray-50 flex justify-end">
+                <button 
+                  onClick={() => setIsManagingCategories(false)}
+                  className="px-6 py-2 bg-ink text-paper text-[10px] font-bold uppercase tracking-widest hover:opacity-90"
+                >
+                  Cerrar
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
