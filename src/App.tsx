@@ -1,0 +1,547 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Plus, 
+  Search, 
+  Copy, 
+  Tag as TagIcon, 
+  Edit3, 
+  Trash2, 
+  ChevronRight, 
+  Layout, 
+  Lightbulb, 
+  Code, 
+  MessageSquare, 
+  Compass,
+  FileText,
+  X,
+  Check,
+  Variable,
+  Wand2,
+  Loader2
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Category, Prompt } from './types';
+import { generateAIPrompt } from './lib/gemini';
+
+// Initial data
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'all', name: 'Todos', icon: 'Layout', color: 'text-zinc-600' },
+  { id: 'coding', name: 'Programación', icon: 'Code', color: 'text-blue-500' },
+  { id: 'writing', name: 'Escritura', icon: 'Edit3', color: 'text-amber-500' },
+  { id: 'chat', name: 'Conversación', icon: 'MessageSquare', color: 'text-emerald-500' },
+  { id: 'creative', name: 'Creativo', icon: 'Lightbulb', color: 'text-purple-500' },
+  { id: 'misc', name: 'Varios', icon: 'Compass', color: 'text-zinc-400' },
+];
+
+export default function App() {
+  const [prompts, setPrompts] = useState<Prompt[]>(() => {
+    const saved = localStorage.getItem('prompt_vault_data');
+    if (saved) return JSON.parse(saved);
+    
+    // Default initial prompts
+    return [
+      {
+        id: '1',
+        title: 'Asistente de Código Python',
+        content: 'Actúa como un experto en Python. Revisa el siguiente código para encontrar errores de lógica y optimizar el rendimiento: {{codigo}}',
+        categoryId: 'coding',
+        tags: ['Python', 'Optimización'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        variables: ['codigo']
+      },
+      {
+        id: '2',
+        title: 'Escritura Creativa: Sci-Fi',
+        content: 'Genera una idea para una historia de ciencia ficción corta donde el protagonista descubre que {{secreto}}. El tono debe ser {{tono}}.',
+        categoryId: 'creative',
+        tags: ['Sci-Fi', 'Storytelling'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        variables: ['secreto', 'tono']
+      }
+    ];
+  });
+  
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [selectedCategoryId, setSelectedCategoryId] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentPrompt, setCurrentPrompt] = useState<Partial<Prompt> | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('prompt_vault_data', JSON.stringify(prompts));
+  }, [prompts]);
+
+  const filteredPrompts = useMemo(() => {
+    return prompts.filter(p => {
+      const matchesCategory = selectedCategoryId === 'all' || p.categoryId === selectedCategoryId;
+      const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           p.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchesCategory && matchesSearch;
+    }).sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [prompts, selectedCategoryId, searchQuery]);
+
+  const extractVariables = (content: string) => {
+    const matches = content.match(/\{\{([^}]+)\}\}/g);
+    return matches ? Array.from(new Set(matches.map(m => m.slice(2, -2).trim()))) : [];
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPrompt?.title || !currentPrompt?.content) return;
+
+    const newPrompt: Prompt = {
+      id: currentPrompt.id || crypto.randomUUID(),
+      title: currentPrompt.title,
+      content: currentPrompt.content,
+      categoryId: currentPrompt.categoryId || 'misc',
+      tags: currentPrompt.tags || [],
+      createdAt: currentPrompt.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      variables: extractVariables(currentPrompt.content),
+    };
+
+    if (currentPrompt.id) {
+      setPrompts(prev => prev.map(p => p.id === newPrompt.id ? newPrompt : p));
+    } else {
+      setPrompts(prev => [newPrompt, ...prev]);
+    }
+
+    setIsEditing(false);
+    setCurrentPrompt(null);
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar este prompt?')) {
+      setPrompts(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleCopy = (content: string, id: string) => {
+    navigator.clipboard.writeText(content);
+    setCopyStatus(id);
+    setTimeout(() => setCopyStatus(null), 2000);
+  };
+
+  const handleAIGenerate = async () => {
+    if (!currentPrompt?.title && !currentPrompt?.content) {
+      alert('Por favor, escribe un título o una idea breve para que la IA pueda trabajar.');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const input = currentPrompt.title || currentPrompt.content || "";
+      const result = await generateAIPrompt(input);
+      setCurrentPrompt(prev => ({
+        ...prev,
+        title: result.title,
+        content: result.content,
+        tags: result.tags
+      }));
+    } catch (error) {
+      console.error(error);
+      alert('Error generando el prompt. Por favor intenta de nuevo.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const getIcon = (iconName: string) => {
+    const icons: Record<string, any> = { Layout, Code, Edit3, MessageSquare, Lightbulb, Compass };
+    const IconComponent = icons[iconName] || Layout;
+    return <IconComponent size={18} />;
+  };
+
+  return (
+    <div className="min-h-screen w-full flex flex-col p-4 md:p-8 bg-paper text-ink font-sans">
+      {/* Header */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-ink pb-4 mb-6 md:mb-8 gap-4">
+        <div className="flex flex-col">
+          <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide mb-1 md:mb-2 opacity-60">The Registry</span>
+          <h1 className="font-serif text-4xl md:text-6xl italic letter-spacing-tight leading-none tracking-tighter">PromptVault</h1>
+        </div>
+        <div className="text-left md:text-right w-full md:w-auto flex md:flex-col justify-between items-end border-t md:border-t-0 border-ink/10 pt-2 md:pt-0">
+          <span className="block text-[8px] md:text-[10px] font-mono uppercase opacity-40 md:opacity-100 italic md:not-italic">v.4.02 — Stable</span>
+          <span className="block text-[9px] md:text-xs opacity-50 font-mono">{new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })} GMT</span>
+        </div>
+      </header>
+
+      {/* Main Grid */}
+      <main className="flex-1 flex flex-col md:grid md:grid-cols-12 gap-6 md:gap-8 overflow-hidden md:h-[calc(100vh-180px)]">
+        {/* Navigation Sidebar */}
+        <aside className="md:col-span-3 flex flex-col justify-between md:border-r border-ink md:pr-6 overflow-y-auto md:overflow-visible custom-scrollbar">
+          <nav className="flex flex-col gap-6 md:gap-8">
+            <section className="order-2 md:order-1">
+              <div className="relative">
+                <Search className="absolute left-0 top-1/2 -translate-y-1/2 text-ink/30" size={14} />
+                <input 
+                  type="text"
+                  placeholder="SEARCH ARCHIVE..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-6 py-2 bg-transparent border-b border-ink/10 focus:border-ink focus:outline-none text-[10px] uppercase font-bold letter-spacing-wide transition-all"
+                />
+              </div>
+            </section>
+
+            <section className="order-1 md:order-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+              <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block mb-3 md:mb-4">Categorías</span>
+              <ul className="flex md:flex-col gap-2 md:gap-1 text-[10px] md:text-xs font-bold md:font-normal uppercase md:capitalize">
+                {categories.map((cat, idx) => (
+                  <li key={cat.id} className="shrink-0 md:shrink">
+                    <button
+                      onClick={() => setSelectedCategoryId(cat.id)}
+                      className={`flex justify-between items-center py-1.5 md:py-2 px-3 md:px-0 border md:border-0 rounded-full md:rounded-none md:border-b transition-all whitespace-nowrap ${
+                        selectedCategoryId === cat.id 
+                        ? 'bg-ink text-paper border-ink md:bg-transparent md:text-ink md:border-ink md:font-bold' 
+                        : 'border-ink/10 md:border-transparent hover:border-ink/30 text-ink/60 hover:text-ink'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="hidden md:inline opacity-30 font-mono text-[9px]">{String(idx).padStart(2, '0')}.</span> {cat.name}
+                      </span>
+                      <span className="hidden md:inline opacity-40 font-normal ml-2">
+                        {cat.id === 'all' ? prompts.length : prompts.filter(p => p.categoryId === cat.id).length}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="hidden md:block">
+              <span className="text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block mb-4">Active Tags</span>
+              <div className="flex flex-wrap gap-1">
+                {Array.from(new Set(prompts.flatMap(p => p.tags))).slice(0, 8).map(tag => (
+                  <span key={tag} className="px-2 py-1 border border-ink text-[9px] uppercase font-bold letter-spacing-wide opacity-40 hover:opacity-100 transition-opacity cursor-default">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </section>
+          </nav>
+
+          <div className="md:mt-auto pt-6 md:pt-8 order-3">
+            <button 
+              onClick={() => {
+                setCurrentPrompt({ categoryId: selectedCategoryId !== 'all' ? selectedCategoryId : 'misc' });
+                setIsEditing(true);
+              }}
+              className="w-full bg-ink text-paper py-3.5 md:py-4 px-6 text-[10px] md:text-xs font-bold flex justify-between items-center group active:scale-[0.98] transition-all hover:bg-ink/90 shadow-lg md:shadow-none"
+            >
+              <span className="letter-spacing-wide">NUEVO PROMPT</span>
+              <Plus size={16} />
+            </button>
+          </div>
+        </aside>
+
+        {/* Prompt List */}
+        <section className="md:col-span-5 md:border-r border-ink md:pr-6 overflow-y-auto custom-scrollbar md:h-full">
+          <div className="mb-4 md:mb-6 flex justify-between items-baseline sticky top-0 bg-paper/95 backdrop-blur-sm z-10 py-2 md:py-0">
+            <h2 className="font-serif text-2xl md:text-3xl italic tracking-tight">
+              {categories.find(c => c.id === selectedCategoryId)?.name || 'Archive'}
+            </h2>
+            <span className="text-[9px] md:text-[10px] font-mono opacity-50 uppercase tracking-tighter">Entry count: {filteredPrompts.length}</span>
+          </div>
+          
+          <div className="space-y-4 md:space-y-6 pb-20 md:pb-8">
+            {filteredPrompts.map((prompt) => (
+              <motion.div
+                key={prompt.id}
+                layout
+                onClick={() => {
+                  setCurrentPrompt(prompt);
+                  setIsEditing(true);
+                }}
+                className="p-4 border border-ink/10 hover:border-ink bg-white transition-all cursor-pointer group relative active:bg-paper/50"
+              >
+                <div className="flex justify-between text-[8px] md:text-[9px] uppercase font-bold mb-2 md:mb-3 letter-spacing-wide">
+                  <span className="opacity-30 tracking-widest">ID:{prompt.id.slice(0, 8).toUpperCase()}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="opacity-30">Ver. 1.0</span>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(prompt.id);
+                      }}
+                      className="ml-2 text-ink/0 group-hover:text-ink/30 md:group-hover:opacity-100 hover:text-red-500 transition-colors opacity-100"
+                    >
+                      <Trash2 size={12} className="md:text-current text-ink/20" />
+                    </button>
+                  </div>
+                </div>
+                
+                <h3 className="text-lg md:text-xl font-bold leading-tight md:leading-none mb-2 md:mb-3 tracking-tight md:group-hover:underline decoration-1 underline-offset-4">{prompt.title}</h3>
+                <p className="text-[11px] md:text-xs leading-relaxed opacity-70 line-clamp-2 italic font-serif">
+                  "{prompt.content}"
+                </p>
+                
+                <div className="mt-3 md:mt-4 flex items-center justify-between">
+                  <div className="flex gap-1">
+                    {prompt.variables.length > 0 && (
+                      <span className="text-[8px] font-bold uppercase bg-ink text-paper px-1 md:px-1.5 py-0.5">
+                        {prompt.variables.length} VARS
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopy(prompt.content, prompt.id);
+                      }}
+                      className={`p-1 px-3 border border-ink text-[8px] md:text-[9px] font-bold uppercase transition-all ${
+                        copyStatus === prompt.id ? 'bg-ink text-paper' : 'hover:bg-ink hover:text-paper'
+                      }`}
+                    >
+                      {copyStatus === prompt.id ? 'COPIADO' : 'COPIAR'}
+                    </button>
+                    <button className="md:hidden p-1 px-2 border border-ink text-[10px]">
+                      <Edit3 size={10} />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+
+            {filteredPrompts.length === 0 && (
+              <div className="py-16 md:py-20 text-center border border-dashed border-ink/20 opacity-40">
+                <span className="text-xs font-bold uppercase letter-spacing-wide italic font-serif">End of Archive</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Global Details / Extra Space - Hidden on Mobile unless selected or at bottom */}
+        <section className="hidden md:flex md:col-span-4 flex-col pt-2 md:h-full">
+          {filteredPrompts.length > 0 ? (
+            <div className="flex-1 border border-ink p-6 relative bg-white shadow-[12px_12px_0px_0px_rgba(26,26,26,0.03)] flex flex-col">
+              <div className="absolute top-0 right-0 p-4">
+                <span className="text-[9px] font-bold uppercase letter-spacing-wide px-2 py-1 bg-ink text-paper">Preview</span>
+              </div>
+              
+              <span className="text-[10px] font-bold uppercase letter-spacing-wide opacity-20 block mb-8">Selected Resource</span>
+              
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <h4 className="font-serif text-2xl italic mb-4 leading-tight border-b border-ink/10 pb-4">{filteredPrompts[0].title}</h4>
+                <div className="font-serif text-sm leading-relaxed mb-8 opacity-80 whitespace-pre-wrap">
+                  {filteredPrompts[0].content}
+                </div>
+                
+                <div className="space-y-4">
+                  <span className="text-[9px] font-bold uppercase letter-spacing-wide opacity-40 block">Metadata</span>
+                  <div className="grid grid-cols-2 gap-2 text-[9px] uppercase font-bold tracking-wider">
+                    <div className="p-3 bg-paper border border-ink/5 flex justify-between">
+                      <span className="opacity-40 text-[8px]">Modified</span>
+                      <span>{new Date(filteredPrompts[0].updatedAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="p-3 bg-paper border border-ink/5 flex justify-between">
+                      <span className="opacity-40 text-[8px]">Length</span>
+                      <span>{filteredPrompts[0].content.length} CHR</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-ink flex gap-2">
+                <button 
+                  onClick={() => handleCopy(filteredPrompts[0].content, filteredPrompts[0].id)}
+                  className="flex-1 py-3 border border-ink text-[10px] font-bold uppercase tracking-widest hover:bg-ink hover:text-paper transition-all"
+                >
+                  Quick Copy
+                </button>
+                <button 
+                  onClick={() => {
+                    setCurrentPrompt(filteredPrompts[0]);
+                    setIsEditing(true);
+                  }}
+                  className="flex-1 py-3 bg-ink text-paper text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all"
+                >
+                  Full Edit
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 border border-ink/10 flex items-center justify-center italic opacity-20 font-serif">
+              Select an entry to view details
+            </div>
+          )}
+          
+          <div className="mt-6 h-12 flex items-center justify-between text-[9px] uppercase letter-spacing-wide font-bold opacity-30">
+            <span className="hover:opacity-100 cursor-pointer transition-opacity">Export .MD</span>
+            <span className="opacity-20">/</span>
+            <span className="hover:opacity-100 cursor-pointer transition-opacity">Log v8.2</span>
+            <span className="opacity-20">/</span>
+            <span className="hover:opacity-100 cursor-pointer transition-opacity">Manifest</span>
+          </div>
+        </section>
+      </main>
+
+      {/* Editorial Editor Modal */}
+      <AnimatePresence>
+        {isEditing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditing(false)}
+              className="absolute inset-0 bg-ink/60 backdrop-blur-[2px]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="relative w-full max-w-2xl bg-paper border border-ink shadow-none md:shadow-[16px_16px_0px_0px_rgba(26,26,26,0.1)] overflow-hidden h-full md:h-auto"
+            >
+              <form onSubmit={handleSave} className="flex flex-col h-full md:max-h-[85vh]">
+                <div className="px-6 md:px-8 py-4 md:py-6 border-b border-ink flex items-center justify-between bg-white">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] md:text-[9px] font-bold uppercase letter-spacing-wide opacity-40">Editor Instance</span>
+                    <h2 className="font-serif text-xl md:text-2xl italic tracking-tight">
+                      {currentPrompt?.id ? 'Revision Entry' : 'New Entry Creation'}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={handleAIGenerate}
+                      className={`flex items-center gap-2 px-3 py-1.5 border border-ink text-[9px] font-bold uppercase transition-all ${
+                        isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ink hover:text-paper shadow-[4px_4px_0px_0px_rgba(26,26,26,0.1)] active:scale-95'
+                      }`}
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          Generando...
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 size={12} />
+                          Magia AI
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="p-1.5 md:p-2 border border-ink hover:bg-ink hover:text-paper transition-all"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 md:space-y-8 custom-scrollbar bg-paper">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8">
+                    <div className="md:col-span-8">
+                      <label className="block text-[8px] md:text-[9px] font-bold uppercase tracking-widest opacity-40 mb-2 md:mb-3">Label / Title</label>
+                      <input 
+                        autoFocus
+                        required
+                        type="text"
+                        placeholder="ENTRY TITLE"
+                        value={currentPrompt?.title || ''}
+                        onChange={(e) => setCurrentPrompt(prev => ({ ...prev, title: e.target.value }))}
+                        className="w-full px-0 py-2 bg-transparent border-b border-ink focus:outline-none font-bold text-lg md:text-xl tracking-tight uppercase"
+                      />
+                    </div>
+                    <div className="md:col-span-4">
+                      <label className="block text-[8px] md:text-[9px] font-bold uppercase tracking-widest opacity-40 mb-2 md:mb-3">Classification</label>
+                      <div className="relative">
+                        <select 
+                          value={currentPrompt?.categoryId || 'misc'}
+                          onChange={(e) => setCurrentPrompt(prev => ({ ...prev, categoryId: e.target.value }))}
+                          className="w-full bg-transparent border border-ink p-2 text-[9px] md:text-[10px] font-bold uppercase appearance-none cursor-pointer pr-8"
+                        >
+                          {categories.filter(c => c.id !== 'all').map(cat => (
+                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2 md:mb-3">
+                      <label className="block text-[8px] md:text-[9px] font-bold uppercase tracking-widest opacity-40">Content Body</label>
+                      <span className="text-[7px] md:text-[8px] font-bold opacity-30 italic font-serif">Variable syntax: {"{{key}}"}</span>
+                    </div>
+                    <textarea 
+                      required
+                      placeholder="ENTER PROMPT CONTENT..."
+                      value={currentPrompt?.content || ''}
+                      onChange={(e) => setCurrentPrompt(prev => ({ ...prev, content: e.target.value }))}
+                      className="w-full h-48 md:h-64 p-4 bg-white border border-ink/20 focus:border-ink transition-colors outline-none font-serif text-sm leading-relaxed resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] md:text-[9px] font-bold uppercase tracking-widest opacity-40 mb-2 md:mb-3">Tags Index (comma separated)</label>
+                    <input 
+                      type="text"
+                      placeholder="TAG1, TAG2, TAG3"
+                      value={currentPrompt?.tags?.join(', ') || ''}
+                      onChange={(e) => setCurrentPrompt(prev => ({ ...prev, tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                      className="w-full px-0 py-2 bg-transparent border-b border-ink focus:outline-none font-mono text-[9px] md:text-[10px] uppercase opacity-80"
+                    />
+                  </div>
+                </div>
+
+                <div className="px-6 md:px-8 py-4 md:py-6 border-t border-ink bg-white flex flex-col md:flex-row gap-3 md:gap-4 sticky bottom-0">
+                  <button 
+                    type="submit"
+                    className="order-1 md:order-2 flex-[2] py-3.5 md:py-4 bg-ink text-paper text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all active:scale-[0.99]"
+                  >
+                    {currentPrompt?.id ? 'COMMIT UPDATE' : 'CREATE ENTRY'}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="order-2 md:order-1 flex-1 py-3.5 md:py-4 border border-ink text-[10px] font-bold uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
+                  >
+                    Discard Changes
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #1A1A1A20;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #1A1A1A40;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        select {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%231A1A1A'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 0.5rem center;
+          background-size: 0.8em;
+        }
+      `}</style>
+    </div>
+  );
+}
