@@ -20,7 +20,12 @@ import {
   Loader2,
   Settings,
   PlusCircle,
-  Pencil
+  Pencil,
+  Download,
+  Upload,
+  Share2,
+  Database,
+  FileJson
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Category, Prompt } from './types';
@@ -86,6 +91,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [isManagingCategories, setIsManagingCategories] = useState(false);
+  const [isManagingArchive, setIsManagingArchive] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -211,6 +217,62 @@ export default function App() {
     }
   };
 
+  const handleExportData = () => {
+    const data = {
+      prompts,
+      categories,
+      version: '4.0.2',
+      exportedAt: Date.now()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `promptvault_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.prompts && Array.isArray(json.prompts)) {
+          if (window.confirm('¿Deseas restaurar esta copia de seguridad? Esto reemplazará tus prompts y categorías actuales.')) {
+            setPrompts(json.prompts);
+            if (json.categories) setCategories(json.categories);
+            setIsManagingArchive(false);
+            alert('Archivo restaurado con éxito.');
+          }
+        }
+      } catch (err) {
+        alert('Error al leer el archivo. Asegúrate de que es un backup válido de PromptVault.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSharePrompt = (prompt: Prompt) => {
+    const shareText = `--- ${prompt.title} ---\n\n${prompt.content}\n\nEnviado desde PromptVault`;
+    if (navigator.share) {
+      navigator.share({
+        title: prompt.title,
+        text: shareText,
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(shareText);
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus(null), 2000);
+      alert('Contenido copiado al portapapeles para compartir.');
+    }
+  };
+
   const getIcon = (iconName: string) => {
     const icons: Record<string, any> = { Layout, Code, Edit3, MessageSquare, Lightbulb, Compass };
     const IconComponent = icons[iconName] || Layout;
@@ -294,6 +356,20 @@ export default function App() {
                 ))}
               </div>
             </section>
+            
+            <section className="order-3 pb-8">
+              <span className="text-[9px] md:text-[10px] font-bold uppercase letter-spacing-wide opacity-40 block mb-3 md:mb-4">Archivo Maestro</span>
+              <button 
+                onClick={() => setIsManagingArchive(true)}
+                className="w-full flex items-center justify-between py-2 border-b border-ink/10 hover:border-ink transition-all group"
+              >
+                <div className="flex items-center gap-2">
+                  <Database size={14} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-[10px] md:text-xs font-bold uppercase letter-spacing-wide">Backups & Export</span>
+                </div>
+                <div className="w-1.5 h-1.5 rounded-full bg-ink/20 group-hover:bg-ink transition-colors" />
+              </button>
+            </section>
           </nav>
 
           <div className="md:mt-auto pt-6 md:pt-8 order-3">
@@ -360,6 +436,16 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSharePrompt(prompt);
+                      }}
+                      className="p-1 px-2 border border-ink text-ink hover:bg-ink hover:text-paper transition-all"
+                      title="Compartir"
+                    >
+                      <Share2 size={12} />
+                    </button>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -677,6 +763,111 @@ export default function App() {
                   className="px-6 py-2 bg-ink text-paper text-[10px] font-bold uppercase tracking-widest hover:opacity-90"
                 >
                   Cerrar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Archive & Backup Modal */}
+      <AnimatePresence>
+        {isManagingArchive && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsManagingArchive(false)}
+              className="absolute inset-0 bg-ink/70 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-xl bg-paper border border-ink shadow-[20px_20px_0px_0px_rgba(26,26,26,0.1)] overflow-hidden"
+            >
+              <div className="px-8 py-6 border-b border-ink flex items-center justify-between bg-white">
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-bold uppercase letter-spacing-wide opacity-40">System Maintenance</span>
+                  <h2 className="font-serif text-2xl italic tracking-tight">Archivo Maestro</h2>
+                </div>
+                <button 
+                  onClick={() => setIsManagingArchive(false)}
+                  className="p-2 border border-ink hover:bg-ink hover:text-paper transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Export Section */}
+                <div className="p-6 border border-ink/10 bg-white flex flex-col justify-between">
+                  <div>
+                    <div className="w-10 h-10 rounded-full border border-ink flex items-center justify-center mb-4">
+                      <Download size={20} />
+                    </div>
+                    <h3 className="text-xs font-bold uppercase letter-spacing-wide mb-2">Exportar Biblioteca</h3>
+                    <p className="text-[10px] opacity-60 leading-relaxed mb-6">
+                      Crea una copia de seguridad local de todos tus prompts y categorías en formato JSON legible.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={handleExportData}
+                    className="w-full py-4 bg-paper border border-ink text-[10px] font-bold uppercase letter-spacing-widest hover:bg-ink hover:text-paper transition-all flex items-center justify-center gap-2"
+                  >
+                    Descargar Backup
+                  </button>
+                </div>
+
+                {/* Import Section */}
+                <div className="p-6 border border-ink/10 bg-white flex flex-col justify-between">
+                  <div>
+                    <div className="w-10 h-10 rounded-full border border-ink flex items-center justify-center mb-4">
+                      <Upload size={20} />
+                    </div>
+                    <h3 className="text-xs font-bold uppercase letter-spacing-wide mb-2">Restaurar Datos</h3>
+                    <p className="text-[10px] opacity-60 leading-relaxed mb-6">
+                      Sube un archivo .json previamente exportado para restaurar tu biblioteca completa.
+                    </p>
+                  </div>
+                  <label className="w-full py-4 bg-paper border border-ink text-[10px] font-bold uppercase letter-spacing-widest hover:bg-ink hover:text-paper transition-all flex items-center justify-center gap-2 cursor-pointer">
+                    <Upload size={14} />
+                    Subir Archivo
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      onChange={handleImportData}
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+
+                {/* Stats Section */}
+                <div className="md:col-span-2 p-4 bg-ink/5 border border-ink/5 flex items-center justify-between">
+                  <div className="flex gap-8">
+                    <div className="flex flex-col">
+                      <span className="text-[8px] uppercase opacity-40 font-bold tracking-tighter">Total Prompts</span>
+                      <span className="font-mono text-xl">{prompts.length}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] uppercase opacity-40 font-bold tracking-tighter">Categorías</span>
+                      <span className="font-mono text-xl">{categories.length - 1}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[8px] font-bold uppercase tracking-widest opacity-30">
+                    <FileJson size={10} />
+                    Vault Standard v4.0.2
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-8 py-4 border-t border-ink bg-gray-50 flex justify-end">
+                <button 
+                  onClick={() => setIsManagingArchive(false)}
+                  className="px-6 py-2 bg-ink text-paper text-[10px] font-bold uppercase tracking-widest hover:opacity-90"
+                >
+                  Regresar
                 </button>
               </div>
             </motion.div>
